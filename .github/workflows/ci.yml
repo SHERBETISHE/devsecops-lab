@@ -30,3 +30,12 @@ jobs:
       run: |
         pip install pip-audit
         pip-audit
+    - name: Build Docker image
+      run: docker build -t secure-flask .
+    - name: Trivy Scan
+      uses: aquasecurity/trivy-action@0.20.0
+      with:
+        image-ref: secure-flask
+        severity: CRITICAL,HIGH
+        exit-code: 1
+
