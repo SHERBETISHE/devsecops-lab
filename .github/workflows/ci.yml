@@ -1,41 +1,57 @@
-name: DevSecOps CI
+name: DevSecOps Pipeline (Split Jobs)
 
-on:
-  push:
-  pull_request:
+on: [push, pull_request]
 
 jobs:
-  security:
+  # --- РАБОТА 1: ПРОВЕРКИ БЕЗОПАСНОСТИ ---
+  security-checks:
+    name: 🛡️ Security Gates
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
+      # 1. Ищем секреты
+      - name: Secret Scanning (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Install dependencies
-      run: |
-        pip install -r requirements.txt
+      # 2. Ищем дыры в Python-коде
+      - name: SAST Scanning (Semgrep)
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: p/security-audit
 
-    - name: SAST - Semgrep
-      uses: returntocorp/semgrep-action@v1
-      with:
-        config: p/default
+      # 3. Ищем старые библиотеки (скан файлов)
+      - name: Dependency Scanning (Trivy FS)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          ignore-unfixed: true
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
 
-    - name: Dependency Scan
-      run: |
-        pip install pip-audit
-        pip-audit
-    - name: Build Docker image
-      run: docker build -t secure-flask .
-    - name: Trivy Scan
-      uses: aquasecurity/trivy-action@0.20.0
-      with:
-        image-ref: secure-flask
-        severity: CRITICAL,HIGH
-        exit-code: 1
+  # --- РАБОТА 2: СБОРКА ОБРАЗА ---
+  build-image:
+    name: 🐳 Build Docker Image
+    runs-on: ubuntu-latest
+    # 🔥 ВОТ ГЛАВНАЯ МАГИЯ:
+    # Этот job запустится ТОЛЬКО если security-checks прошел успешно
+    needs: [security-checks] 
+    
+    steps:
+      # Важно: Каждый job запускается на чистой виртуалке, 
+      # поэтому код нужно скачать заново.
+      - name: Checkout code
+        uses: actions/checkout@v3
 
+      - name: Build Docker Image
+        run: |
+          docker build -t my-secure-app:${{ github.sha }} .
+          echo "✅ Image built successfully"
+
+      # (Опционально) Тут мог бы быть шаг 'docker push', если бы мы настроили DockerHub

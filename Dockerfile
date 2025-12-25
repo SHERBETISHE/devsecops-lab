@@ -1,7 +1,7 @@
-FROM python:3.12-alpine
+FROM python:3.10-slim
 
-# Создаём непривилегированного пользователя
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# Создаем пользователя (Best Practice)
+RUN useradd -m -u 1000 appuser
 
 WORKDIR /app
 
@@ -10,8 +10,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 
-USER appuser
-
+# Документируем порт (это важно для того, кто будет запускать контейнер)
 EXPOSE 8080
 
+USER appuser
+
+# Запускаем!
 CMD ["python", "app.py"]
